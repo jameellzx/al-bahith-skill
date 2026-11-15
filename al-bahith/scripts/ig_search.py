@@ -147,8 +147,9 @@ def known_handles():
     return hs
 
 
-def judge(user, info, cc):
-    """Return list of fail reasons (empty = lead)."""
+def judge(user, info, cc, niche=None):
+    """Return list of fail reasons (empty = lead). niche: compiled regex of the field's words; the account must
+    mention one of them in its name, handle, bio, category or links."""
     why = []
     f = user.get("follower_count")
     if f is None or f < MIN_F or f > MAX_F:
@@ -173,10 +174,14 @@ def judge(user, info, cc):
         why.append("from another country")
     elif not local:
         why.append(f"no sign it is in {COUNTRY_NAMES.get(cc, cc)}")
+    if niche:
+        hay = f"{text} {cat} {' '.join(info.get('links') or [])}".lower()
+        if not niche.search(hay):
+            why.append(f"not in the field ({cat or 'no category'})")
     return why
 
 
-async def phase_profiles(handles, found, cc, cap, wmin, wmax, out, want=0, no_site=False):
+async def phase_profiles(handles, found, cc, cap, wmin, wmax, out, want=0, no_site=False, niche=None):
     cand_f, ig_f = out / "candidates.json", out / "ig.json"
     state = json.loads(cand_f.read_text(encoding="utf-8")) if cand_f.exists() else None
     ig = json.loads(ig_f.read_text(encoding="utf-8")) if ig_f.exists() else {}
@@ -237,7 +242,7 @@ async def phase_profiles(handles, found, cc, cap, wmin, wmax, out, want=0, no_si
                     card_fails = 0
                     info = merge_card(info, card)
             ig[h] = info
-            why = judge(user, info, cc)
+            why = judge(user, info, cc, niche)
             if why:
                 rejected.append({"handle": h, "page_name": user.get("full_name") or h, "why": why})
             else:
@@ -299,6 +304,8 @@ async def main():
     ap.add_argument("--scrolls", type=int, default=4)
     ap.add_argument("--cap", type=int, default=80, help="max profiles to read this run")
     ap.add_argument("--want", type=int, default=0, help="stop after this many leads pass (0 = read up to --cap)")
+    ap.add_argument("--niche", default="", help="'|' separated words of the field (Arabic + English); a lead must "
+                                               "mention one in its name/handle/bio/category/links")
     ap.add_argument("--no-site", action="store_true", help="only businesses with NO working website (skip any with one)")
     ap.add_argument("--min-wait", type=float, default=5)
     ap.add_argument("--max-wait", type=float, default=10)
@@ -319,8 +326,11 @@ async def main():
     handles = sorted((h for h in found if h not in known), key=lambda h: (not any("tagged" in v for v in found[h]["via"]),
                                                                          bool(found[h].get("verified"))))
     log(f"{len(found)} accounts found, {len(found) - len(handles)} already known, {len(handles)} new")
+    niche = re.compile("|".join(re.escape(w.strip().lower()) for w in a.niche.split("|") if w.strip())) if a.niche else None
+    if not niche:
+        log("WARNING: no --niche words given, leads are not checked against the field")
     status, passed, rejected = await phase_profiles(handles, found, cc, a.cap, a.min_wait, a.max_wait, out, a.want,
-                                                    a.no_site)
+                                                    a.no_site, niche)
     print(json.dumps({"status": status, "found": len(found), "new": len(handles), "leads": len(passed),
                       "rejected": len(rejected)}))
     if status != "OK":

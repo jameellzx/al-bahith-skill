@@ -47,21 +47,21 @@ python scripts/adlib_scan.py --mode refs    --country US --keywords "kw1|kw2|...
 When the user asks for clients **with no website** ("بدون موقع", "ما عندهم موقع", "no website"):
 - Check the bio links and the Contact button data. A business with a working website is **skipped completely**: not scored, and not put in «وسط» or «شيك عليها».
 - Only these count as "no website": no link, or only WhatsApp/Instagram/link-hub pages (Linktree, reach.link…), or a site that does not load.
-- Use `--no-site` on `ig_search.py` (it checks each lead's link live and rejects working sites) and on `write_xlsx.py`. The target number counts only no-website businesses. No scoring step is needed.
+- Use `--no-site` on `ig_search.py` (it checks each lead's link live and rejects working sites) and on `write_xlsx.py`. The target number counts only no-website businesses. No scoring step is needed, but the field check (step 6b) still is.
 
 ## 3b. Clients only: Instagram as a second source (`ig_search.py`)
 Use it when the user asks for Instagram ("من الانستقرام", "دوّر بالانستقرام", "hashtags"), or when Ad Library is blocked or gives too few leads. It uses the saved Instagram session in **phone mode** (iPhone screen + User-Agent), where keyword search and hashtag pages show posts the way the app does.
 ```
-python scripts/ig_search.py --country KW --keywords "perfume kuwait|عطور الكويت" --hashtags "عطور_الكويت|perfumekuwait" --out "$RUN" --cap 400 --want 50 [--no-site]
+python scripts/ig_search.py --country KW --keywords "perfume kuwait|عطور الكويت" --hashtags "عطور_الكويت|perfumekuwait" --niche "عطور|عطر|بخور|عود|perfume|fragrance|oud|..." --out "$RUN" --cap 400 --want 50 [--no-site]
 ```
 - Run it in the background with output to a log file (`> "$RUN/run.log" 2>&1`, and `python -u`) and watch the log. In PowerShell, don't use `2>&1` straight on python: it shows progress lines as fake errors.
 - `--want N`: stop once N leads pass. With `--no-site` only no-website leads count, so "50 clients with no website" = `--want 50 --no-site`. Without it, about half the leads end up in عملائي after scoring, so ask for about twice the target.
 - About 1 in 5–10 profiles read becomes a no-website lead in a busy niche like perfume, so 50 leads need about 300–400 profile reads (1–1.5 h at the safe pace). Tell the user the expected time before starting.
 - Accounts rejected in earlier Instagram runs are not read again. Accounts that only failed to load (internet cut) are not counted as rejected. After 5 failed loads in a row the run stops with `NETWORK`; rerun the same command when the internet is back.
-- Keywords: build them like step 1 (niche + country, in Arabic and English) and also 1–3 hashtags. Show them to the user and wait for an OK.
+- Keywords: build them like step 1 (niche + country, in Arabic and English) and also 1–3 hashtags. Also build `--niche`, the field's own words in Arabic and English, including dialect, singular and plural, and product names. For perfume: `"عطور|عطر|عطورات|بخور|عود|دهن|مسك|طيب|معطر|perfume|parfum|fragrance|scent|oud|bakhoor|bukhoor|musk|attar"`. Show the keywords, hashtags and niche words to the user and wait for an OK. Always pass `--niche`: without it, any business tagged in a post can pass.
 - Phase 1 collects every account that posted in the results, plus every `@shop` tagged in their captions. A shop that pays influencers already spends on marketing, so tagged shops are read first.
 - Phase 2 reads each new profile, paced 5–10 s, up to `--cap`. For accounts in the follower range it also reads the **Contact button** data: the email, phone and WhatsApp the business set in the app (often not in the bio). It reads it the way the iPhone app does, with the same saved session (`contact_card` in `ig_profile.py`). After 3 refusals in a row it skips that for the rest of the run. `ig_profile.py` does the same for Ad Library leads. It keeps only: 1,000–70,000 followers, a business (not an influencer or creator, unless the bio says it sells), not private, and a sign it is in the country (a local phone number, or the country or `kw`/`q8` in the name, handle or bio). A foreign phone number drops it.
-- It writes `candidates.json` and `ig.json` like steps 3–4, so **skip step 4** and continue with step 5. The «وين لقيته» column gets the post link where the account was found, and «كلمة البحث» says which search or tag found it.
+- It writes `candidates.json` and `ig.json` like steps 3–4, so **skip step 4** and continue with step 5. Do step 6b (field check) before step 7. The «وين لقيته» column gets the post link where the account was found, and «كلمة البحث» says which search or tag found it.
 - No ad data for these, so «عدد الإعلانات» and «مدة الإعلان» stay empty.
 - Exit 4 (`LOGIN_WALL` / `RATE_LIMIT` / `NETWORK`): stop and tell the user. Rerunning the same command continues where it stopped (`ig_found.json` keeps the search results; delete it to search again).
 - Tested 2026-11-15 on perfume, Kuwait: 7 keywords + 5 hashtags found 536 accounts in 5 min. 180 profiles read gave 28 no-website shops, 25 with WhatsApp and 12 with email (most emails came from the Contact button).
@@ -90,6 +90,18 @@ Only for pages where `sites.json` has `kind == "site"` and `shots/shots.json` ha
 - Up to 10 sites: score them yourself and write `$RUN/scores.json`.
 - More than 10: split them into batches of about 10 and send each batch to a subagent (general-purpose) with: the path of `references/site-score.md`, the list of `page_id` with their image paths and `pagespeed_mobile`, and the output file `$RUN/scores_part<N>.json`. Run the batches in parallel.
 - Clients mode: no need to score pages with no real site.
+
+## 6b. Field check by eye (always, before the Excel step; user rule 2026-11-16)
+Never give the user a lead outside their field. A perfume search can bring in a bakery, a restaurant, a delivery app or a general store (they show up because an influencer tagged them).
+```
+python scripts/review.py list "$RUN"
+python scripts/review.py drop "$RUN" handle1,handle2 --why "bakery, not perfume"
+```
+- Read each line (name, category, bio). Keep only businesses that **sell in the field** the user asked for. Drop:
+  - other kinds of business;
+  - suppliers to the field (packaging, printing, factories) unless the user asked for them;
+  - an empty or vague bio with nothing that ties it to the field.
+- Tell the user in one line how many were dropped and why, then go on to step 7.
 
 ## 7. Build the tables
 ```
