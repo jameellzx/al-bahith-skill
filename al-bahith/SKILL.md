@@ -1,11 +1,11 @@
 ---
 name: al-bahith
-description: الباحث / الكشاف (the Researcher / the Scout). Searches Meta Ad Library for active ads and returns ONE of two tables. المراجع (references) are strong websites of big advertisers (ad running 90+ days, 90+ active ads), USA by default, sorted by how long the ad has run, used for inspiration. عملائي (my clients) are small local advertisers (under 15 ads, ad running 7+ days, Instagram 1,000–70,000 followers) with no website or a very weak one, from the country the user names, with Instagram, followers, WhatsApp, email and where the lead was found. Self-contained (needs no other skill). Use when the user says "الباحث", "الكشاف", "شغّل الكشاف", "scout", "أبي مراجع", "بدي مراجع", "أبي عملاء", "بدي عملاء", "دور لي عملاء", "دور لي مراجع", "researcher", "find references", or "find clients from ad library".
+description: الباحث / الكشاف (the Researcher / the Scout). Searches Meta Ad Library for active ads and returns ONE of two tables. المراجع (references) are strong websites of big advertisers (ad running 90+ days, 90+ active ads), USA by default, sorted by how long the ad has run, used for inspiration. عملائي (my clients) are small local advertisers (under 15 ads, ad running 7+ days, Instagram 1,000–70,000 followers) with no website or a very weak one, from the country the user names, with Instagram, followers, WhatsApp, email and where the lead was found. Clients can also come from Instagram itself: keyword search and hashtags in phone mode (iPhone emulation with the user's saved session), reading each profile's bio and its Contact button (email, phone, WhatsApp). A "no website" request returns only businesses with no working website. Self-contained (needs no other skill). Use when the user says "عملاء من الانستقرام", "دور بالانستقرام", "عملاء بدون موقع", "ما عندهم موقع", "no website", "الباحث", "الكشاف", "شغّل الكشاف", "scout", "أبي مراجع", "بدي مراجع", "أبي عملاء", "بدي عملاء", "دور لي عملاء", "دور لي مراجع", "researcher", "find references", or "find clients from ad library".
 ---
 
 # الباحث (al-bahith)
 
-Source: **Meta Ad Library only**. Talk to the user in Arabic (Gulf/Levantine, plain words).
+Sources: **Meta Ad Library** (default) and **Instagram search/hashtags** in phone mode (clients only, step 3b). Talk to the user in Arabic (Gulf/Levantine, plain words).
 Scripts: `~/.claude/skills/al-bahith/scripts/` (below, `scripts/…` means this folder; use the full path when you run them).
 Data folder (`<data>`): run `python scripts/paths.py` to print it. The default is `~/al-bahith`; it can be changed with `config.json` in the skill folder (`{"data_dir": "..."}`) or the env `AL_BAHITH_DATA`.
 Run every script with the system Python (`python`, or `python3` on Mac). Needs `pip install "scrapling[fetchers]" openpyxl`, then `scrapling install`, once. If an import fails, install those first and tell the user.
@@ -42,6 +42,29 @@ python scripts/adlib_scan.py --mode refs    --country US --keywords "kw1|kw2|...
 - It skips pages already shown in earlier runs (`seen.json`).
 - Output: `$RUN/candidates.json` → `passed` (with page name, `ig_username`, `ig_followers`, `active_ads`, `days_running`, `oldest_start`, ad links, WhatsApp numbers from ads, `manager_countries`) plus `rejected_sample` (why pages failed).
 - Too few passed? Suggest more or different keywords to the user, and run again with them into the same `$RUN` folder under a new `--out` subfolder, then merge. Or tell the user the count.
+
+## No-website runs (user rule, 2026-11-15)
+When the user asks for clients **with no website** ("بدون موقع", "ما عندهم موقع", "no website"):
+- Check the bio links and the Contact button data. A business with a working website is **skipped completely**: not scored, and not put in «وسط» or «شيك عليها».
+- Only these count as "no website": no link, or only WhatsApp/Instagram/link-hub pages (Linktree, reach.link…), or a site that does not load.
+- Use `--no-site` on `ig_search.py` (it checks each lead's link live and rejects working sites) and on `write_xlsx.py`. The target number counts only no-website businesses. No scoring step is needed.
+
+## 3b. Clients only: Instagram as a second source (`ig_search.py`)
+Use it when the user asks for Instagram ("من الانستقرام", "دوّر بالانستقرام", "hashtags"), or when Ad Library is blocked or gives too few leads. It uses the saved Instagram session in **phone mode** (iPhone screen + User-Agent), where keyword search and hashtag pages show posts the way the app does.
+```
+python scripts/ig_search.py --country KW --keywords "perfume kuwait|عطور الكويت" --hashtags "عطور_الكويت|perfumekuwait" --out "$RUN" --cap 400 --want 50 [--no-site]
+```
+- Run it in the background with output to a log file (`> "$RUN/run.log" 2>&1`, and `python -u`) and watch the log. In PowerShell, don't use `2>&1` straight on python: it shows progress lines as fake errors.
+- `--want N`: stop once N leads pass. With `--no-site` only no-website leads count, so "50 clients with no website" = `--want 50 --no-site`. Without it, about half the leads end up in عملائي after scoring, so ask for about twice the target.
+- About 1 in 5–10 profiles read becomes a no-website lead in a busy niche like perfume, so 50 leads need about 300–400 profile reads (1–1.5 h at the safe pace). Tell the user the expected time before starting.
+- Accounts rejected in earlier Instagram runs are not read again. Accounts that only failed to load (internet cut) are not counted as rejected. After 5 failed loads in a row the run stops with `NETWORK`; rerun the same command when the internet is back.
+- Keywords: build them like step 1 (niche + country, in Arabic and English) and also 1–3 hashtags. Show them to the user and wait for an OK.
+- Phase 1 collects every account that posted in the results, plus every `@shop` tagged in their captions. A shop that pays influencers already spends on marketing, so tagged shops are read first.
+- Phase 2 reads each new profile, paced 5–10 s, up to `--cap`. For accounts in the follower range it also reads the **Contact button** data: the email, phone and WhatsApp the business set in the app (often not in the bio). It reads it the way the iPhone app does, with the same saved session (`contact_card` in `ig_profile.py`). After 3 refusals in a row it skips that for the rest of the run. `ig_profile.py` does the same for Ad Library leads. It keeps only: 1,000–70,000 followers, a business (not an influencer or creator, unless the bio says it sells), not private, and a sign it is in the country (a local phone number, or the country or `kw`/`q8` in the name, handle or bio). A foreign phone number drops it.
+- It writes `candidates.json` and `ig.json` like steps 3–4, so **skip step 4** and continue with step 5. The «وين لقيته» column gets the post link where the account was found, and «كلمة البحث» says which search or tag found it.
+- No ad data for these, so «عدد الإعلانات» and «مدة الإعلان» stay empty.
+- Exit 4 (`LOGIN_WALL` / `RATE_LIMIT` / `NETWORK`): stop and tell the user. Rerunning the same command continues where it stopped (`ig_found.json` keeps the search results; delete it to search again).
+- Tested 2026-11-15 on perfume, Kuwait: 7 keywords + 5 hashtags found 536 accounts in 5 min. 180 profiles read gave 28 no-website shops, 25 with WhatsApp and 12 with email (most emails came from the Contact button).
 
 ## 4. Clients only: Instagram contacts (background, start right after step 3)
 Followers already come from Ad Library. Instagram is read only for the bio, the website link, WhatsApp and email. The script opens each profile page with the saved session and reads the profile's embedded data. It picks up `wa.me` links and local mobile numbers written in the bio, for example "50 70 46 58" in Kuwait. About 13 s per profile.

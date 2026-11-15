@@ -44,6 +44,67 @@ async def login():
         sys.exit(3)
 
 
+APP_UA = "Instagram 361.0.0.35.82 (iPhone14,3; iOS 18_1; en_US; en; scale=3.00; 1284x2778; 674117118) AppleWebKit/420+"
+
+
+async def contact_card(ctx, pk):
+    """The data behind the app's Contact button (email, phone, WhatsApp, address), read the way the iPhone app
+    does, with the same saved session. Returns a dict, or None if Instagram refuses."""
+    import base64
+    ck = {c["name"]: c["value"] for c in await ctx.cookies("https://www.instagram.com")}
+    if not ck.get("sessionid"):
+        return None
+    tok = base64.b64encode(json.dumps({"ds_user_id": ck.get("ds_user_id"), "sessionid": ck["sessionid"]},
+                                      separators=(",", ":")).encode()).decode()
+    try:
+        r = await ctx.request.get(f"https://i.instagram.com/api/v1/users/{pk}/info/", headers={
+            "User-Agent": APP_UA, "x-ig-app-id": "124024574287414", "Authorization": f"Bearer IGT:2:{tok}",
+            "X-IG-App-Locale": "en_US", "X-IG-Device-Locale": "en_US", "X-IG-Capabilities": "36r/F/8=",
+            "X-IG-Connection-Type": "WiFi", "Cookie": ""}, timeout=20000)
+        if r.status != 200:
+            return None
+        u = (await r.json()).get("user")
+    except Exception:
+        return None
+    if not isinstance(u, dict):
+        return None
+    phones = []
+    if u.get("public_phone_number"):
+        phones.append(re.sub(r"\D", "", f"{u.get('public_phone_country_code') or ''}{u['public_phone_number']}"))
+    for k in ("contact_phone_number", "whatsapp_number"):
+        if u.get(k):
+            phones.append(re.sub(r"\D", "", str(u[k])))
+    return {"email": u.get("public_email") or None, "phones": [p for p in phones if len(p) >= 7],
+            "address": " ".join(x for x in (u.get("address_street"), u.get("city_name")) if x) or None}
+
+
+def merge_card(info, card):
+    """Add contact-button data to an extract() result; contact-button details come first."""
+    if not card:
+        return info
+    info["contact_button"] = card
+    if card["email"] and card["email"].lower() not in [e.lower() for e in info["emails"]]:
+        info["emails"] = [card["email"]] + info["emails"]
+    info["whatsapp"] = dedupe_phones(card["phones"] + info["whatsapp"])
+    return info
+
+
+def dedupe_phones(phones):
+    """Same number with and without country code -> keep one (the longer, with code)."""
+    best = {}
+    for p in phones:
+        k = p[-8:]
+        if k not in best or len(p) > len(best[k]):
+            best[k] = p
+    seen, out = set(), []
+    for p in phones:
+        k = p[-8:]
+        if k not in seen:
+            seen.add(k)
+            out.append(best[k])
+    return out
+
+
 def profile_object(html, handle):
     """Find the profile's own user object inside the page's embedded JSON."""
     dec = json.JSONDecoder()
@@ -114,6 +175,7 @@ async def read_all(inp, outp, cap, wmin, wmax):
         if "login" in page.url:
             print("LOGIN_WALL: session expired, run --login again"); await ctx.close(); sys.exit(3)
         misses = 0
+        card_on, card_fails = True, 0
         for i, h in enumerate(todo, 1):
             try:
                 resp = await page.goto(PROFILE.format(u=h), wait_until="domcontentloaded", timeout=45000)
@@ -129,7 +191,14 @@ async def read_all(inp, outp, cap, wmin, wmax):
                 status = "RATE_LIMIT"; break
             user = profile_object(html, h)
             if user:
-                out[h] = extract(user, cc)
+                info = extract(user, cc)
+                if card_on:
+                    await page.wait_for_timeout(int(random.uniform(1.5, 3) * 1000))
+                    card = await contact_card(ctx, user.get("pk") or user.get("id"))
+                    card_fails = 0 if card else card_fails + 1
+                    card_on = card_fails < 3
+                    info = merge_card(info, card)
+                out[h] = info
                 misses = 0
             else:
                 out[h] = {"error": "not found" if st == 404 or "Page Not Found" in html[:3000] else "parse"}

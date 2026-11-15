@@ -79,6 +79,7 @@ def main():
     ap.add_argument("--field", default="all")
     ap.add_argument("--want", type=int, default=0)
     ap.add_argument("--master", default=str(MASTER))
+    ap.add_argument("--no-site", action="store_true", help="clients: keep only businesses with no working website")
     ap.add_argument("--from-final", help="append an existing final.json to the master file (no recompute)")
     a = ap.parse_args()
     if a.from_final:
@@ -151,6 +152,11 @@ def main():
 
     if mode == "refs":
         rows.sort(key=lambda r: -(r["days_running"] or 0))
+    elif a.no_site:
+        # user rule: "no website" runs keep ONLY businesses without a working website; nothing goes to وسط / شيك عليها
+        dropped += [(r["page_name"], "has website") for r in rows + middle + check_these if r.get("has_site")]
+        rows = [r for r in rows if not r.get("has_site")]
+        middle, check_these = [], []
     rows = rows[:want]
     final = {"mode": mode, "country": cc, "field": a.field, "rows": rows, "check_these": check_these,
              "middle": middle, "stats": {**cand["stats"], "rows": len(rows), "check_these": len(check_these),

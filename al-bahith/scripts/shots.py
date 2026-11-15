@@ -94,7 +94,7 @@ async def main():
     sem = asyncio.Semaphore(a.workers)
     async with async_playwright() as pw:
         browser = await pw.chromium.launch(headless=True)
-        res = await asyncio.gather(*(shoot(browser, u, str(d / pid), sem) for pid, u in todo))
+        res = await asyncio.gather(*(shoot(browser, u, str(d / re.sub(r'[\\/:*?"<>|]', "_", pid)), sem) for pid, u in todo))
         await browser.close()
     out = {pid: r for (pid, _), r in zip(todo, res)}
     (d / "shots.json").write_text(json.dumps(out, indent=1), encoding="utf-8")

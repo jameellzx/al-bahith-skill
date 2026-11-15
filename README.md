@@ -15,7 +15,17 @@ Everything goes into **one Excel file** (`الباحث.xlsx`). Each run adds to 
 5. Claude scores each site on 10 points (`references/site-score.md`). 7–10 is strong (a reference), 5–6 is middle, 0–4 is very weak (a client).
 6. The rows are added to the Excel file. Clients mode also fills two side sheets: «شيك عليها» (strong sites found while looking for clients) and «وسط» (middle).
 
-A full run of 50 clients takes about 20–30 minutes, mostly the paced Instagram reading. 20 references take about 10–15 minutes.
+### Second source: Instagram (phone mode)
+Ask for clients "from Instagram" (or when Ad Library is blocked). The skill opens Instagram as an **iPhone** (phone screen and User-Agent) with your own saved session, where keyword search ("perfume kuwait") and hashtag pages (#عطور_الكويت) show posts the way the app does. Then:
+- It collects every account that posted, plus every shop **tagged** in their captions. Shops that pay influencers already spend on marketing, so they're read first.
+- It reads each profile, paced slowly: followers, bio and links, plus the **Contact button** data (email, phone, WhatsApp the business set in the app, often not in the bio).
+- It keeps local businesses only (1,000–70,000 followers, not influencers, a local phone or a sign of the country).
+
+### "No website" mode
+Ask for clients **with no website** ("عملاء بدون موقع"). Every bio link is checked live, and any business with a working website is skipped. Only shops with no site (or only WhatsApp / Linktree-type links, or a dead site) go into the table, and the number you ask for counts only those.
+Real test (perfume, Kuwait): 536 accounts found in 5 minutes; 180 profiles read gave 28 shops with no website, 25 of them with WhatsApp and 12 with email.
+
+A full Ad Library run of 50 clients takes about 20–30 minutes, mostly the paced Instagram reading. 20 references take about 10–15 minutes.
 
 ## Requirements
 - Claude Code
@@ -37,7 +47,7 @@ Check it works with: python ~/.claude/skills/al-bahith/scripts/paths.py
 When I first ask for clients, run the Instagram login (scripts/ig_profile.py --login) and wait for me to sign in myself.
 ```
 
-Start a new session and say **"الكشاف"**, **"أبي عملاء"** or **"أبي مراجع"**.
+Start a new session and say **"الكشاف"**, **"أبي عملاء"**, **"أبي مراجع"**, or **"أبي ٥٠ عميل بدون موقع من الانستقرام، مجال عطور، الكويت"**.
 
 ## Your data
 Everything is stored in `~/al-bahith/`:
@@ -61,7 +71,8 @@ al-bahith/
   references/site-score.md       the 10-point website score
   references/keywords-all-fields.md   keyword lists (Gulf Arabic/English, USA)
   scripts/adlib_scan.py          Ad Library scan (stealth browser, parallel)
-  scripts/ig_profile.py          Instagram bio/contacts with your saved session
+  scripts/ig_profile.py          Instagram bio + Contact button data with your saved session
+  scripts/ig_search.py           Instagram keyword/hashtag search in phone mode -> leads (--no-site)
   scripts/site_check.py          site loads? pixel? WhatsApp/email on the page
   scripts/shots.py               mobile + desktop screenshots, mobile load time
   scripts/write_xlsx.py          sorts pages into tables, adds them to the one Excel file

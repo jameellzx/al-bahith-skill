@@ -44,7 +44,8 @@ RULES = {
 
 SOCIAL = ("facebook.com", "fb.com", "fb.me", "instagram.com", "m.me", "messenger.com")
 WA = ("wa.me", "whatsapp.com", "wa.link")
-LINKHUBS = ("linktr.ee", "linkin.bio", "beacons.ai", "bio.link", "taplink", "lnk.bio", "campsite.bio", "linkbio")
+LINKHUBS = ("linktr.ee", "linkin.bio", "beacons.ai", "bio.link", "taplink", "lnk.bio", "campsite.bio", "linkbio",
+            "reachlnk", "reach.link", "iwtsp.com", "solo.to", "allmylinks", "hoo.be", "msha.ke", "linkr.bio", "flow.page")
 
 NOW = time.time()
 
