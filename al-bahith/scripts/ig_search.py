@@ -279,11 +279,14 @@ def working_site(lead, info):
     """URL of a website that really loads (bio link / contact data), or None. Link hubs, WhatsApp and
     Instagram links are not websites. Used by --no-site."""
     from site_check import pick_site, check
-    pick = pick_site(lead, info)
+    pick = pick_site(lead, info)  # also opens link hubs (Linktree...) and reads bio text + email domains
     if pick["kind"] != "site":
         return None
-    r = check(pick["url"], False)
-    return (r["final_url"] or pick["url"]) if r["loads"] is not False and r["kind"] == "site" else None
+    for u in pick.get("candidates") or [pick["url"]]:
+        r = check(u, False)
+        if r["loads"] is not False and r["kind"] == "site":
+            return r["final_url"] or u
+    return None
 
 
 def save(out, cc, passed, rejected, ig, found):

@@ -47,6 +47,8 @@ python scripts/adlib_scan.py --mode refs    --country US --keywords "kw1|kw2|...
 When the user asks for clients **with no website** ("بدون موقع", "ما عندهم موقع", "no website"):
 - Check the bio links and the Contact button data. A business with a working website is **skipped completely**: not scored, and not put in «وسط» or «شيك عليها».
 - Only these count as "no website": no link, or only WhatsApp/Instagram/link-hub pages (Linktree, reach.link…), or a site that does not load.
+- Hidden websites (fixed 2026-11-16): `site_check.py` / `--no-site` open every link hub (Linktree, reach.link, iwtsp…) and read the sites listed inside, read domains written in the bio text, and the domain of a business email (not gmail/hotmail/icloud…). Every candidate is tried until one loads. A lead whose site hides behind one of these is NOT a no-website lead.
+- The «عملائي» and «وسط» sheets always have a «الموقع التجريبي» column (added to old files too); bani-al-demo fills it.
 - Use `--no-site` on `ig_search.py` (it checks each lead's link live and rejects working sites) and on `write_xlsx.py`. The target number counts only no-website businesses. No scoring step is needed, but the field check (step 6b) still is.
 
 ## 3b. Clients only: Instagram as a second source (`ig_search.py`)

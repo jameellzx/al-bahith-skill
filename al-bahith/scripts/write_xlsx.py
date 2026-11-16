@@ -173,7 +173,9 @@ REF_HEADS = ["الاسم", "رابط الموقع", "مدة الإعلان (أي
              "سرعة الجوال (ثانية)", "ملاحظة", "رابط Ad Library", "الدولة", "المجال", "تاريخ البحث"]
 CLI_HEADS = ["الاسم", "رابط انستقرام", "عدد المتابعين", "عنده موقع؟", "الموقع", "واتساب", "إيميل",
              "وين لقيته (Ad Library)", "درجة الموقع", "أكثر 3 مشاكل", "عدد الإعلانات", "مدة الإعلان (أيام)",
-             "دولة إدارة الصفحة", "كلمة البحث", "الدولة", "المجال", "تاريخ البحث"]
+             "دولة إدارة الصفحة", "كلمة البحث", "الدولة", "المجال", "تاريخ البحث", "الموقع التجريبي"]
+# columns every sheet must always have (added to an old sheet that lacks them); filled later by bani-al-demo
+ALWAYS = {"عملائي": ["الموقع التجريبي"], "وسط": ["الموقع التجريبي"]}
 CHK_HEADS = ["الاسم", "الموقع", "الدرجة", "ليش شفته قوي", "مدة الإعلان (أيام)", "رابط Ad Library",
              "الدولة", "المجال", "تاريخ البحث"]
 SHEETS = [("المراجع", REF_HEADS), ("عملائي", CLI_HEADS), ("شيك عليها", CHK_HEADS), ("وسط", CLI_HEADS)]
@@ -188,7 +190,7 @@ def _cli_row(r, tail):
     return [r["page_name"], r["ig_url"], r["followers"], "نعم" if r["has_site"] else "لا", r["site_url"],
             " / ".join(r["whatsapp"]) or "غير متوفر", " / ".join(r["emails"]) or "غير متوفر",
             r["ad_library_url"], r["score"], " | ".join(r["problems"][:3]), r["active_ads"], r["days_running"],
-            r.get("manager_countries") or "غير معروف", ", ".join(r.get("keywords") or [])] + tail
+            r.get("manager_countries") or "غير معروف", ", ".join(r.get("keywords") or [])] + tail + [""]
 
 
 def _chk_row(r, tail):
@@ -222,7 +224,16 @@ def append_to_master(final, master):
     added = {}
     for title, heads in SHEETS:
         rows, oldheads = old.get(title, ([], None))
-        heads = oldheads if oldheads and len(oldheads) >= len(heads) else heads
+        std = heads
+        heads = ["" if h is None else h for h in oldheads] if oldheads else list(heads)
+        while heads and heads[-1] == "":
+            heads.pop()
+        for h in std + ALWAYS.get(title, []):  # an old sheet gets any standard column it is missing
+            if h not in heads:
+                heads.append(h)
+        rows = [r + [None] * (len(heads) - len(r)) for r in rows]
+        # new rows are built in the standard order; place each value under its own header name
+        new[title] = [[dict(zip(std, r)).get(h) for h in heads] for r in new[title]]
         key_col = next((i for i, h in enumerate(heads) if h and "Ad Library" in str(h)), None)
         have = {str(r[key_col]) for r in rows if key_col is not None and len(r) > key_col}
         fresh = [r for r in new[title] if key_col is None or str(r[key_col]) not in have]

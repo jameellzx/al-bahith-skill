@@ -34,23 +34,80 @@ def home(url):
     return f"{u.scheme or 'https'}://{u.netloc}/"
 
 
-def pick_site(p, ig=None):
-    cands = []
+FREE_MAIL = ("gmail.", "hotmail.", "outlook.", "yahoo.", "icloud.", "live.", "msn.", "aol.", "proton", "mail.ru",
+             "yandex.", "me.com", "windowslive.")
+# a domain written in plain text (bio, link-hub page): www.shop.com / shop.com.kw / https://shop.store
+DOMAIN_RE = re.compile(r"(?<![@\w.-])(?:https?://)?(?:www\.)?((?:[a-z0-9-]+\.)+(?:com|net|org|co|shop|store|online|me|"
+                       r"kw|sa|ae|qa|bh|om|com\.kw|com\.sa|net\.kw|uk|co\.uk|io|app|site|boutique|perfume|beauty))"
+                       r"(?![\w-])", re.I)
+HREF_RE = re.compile(r"""href=["'](https?://[^"'\s>]+)""", re.I)
+# hosts that show up inside link-hub pages but are never the client's own website
+HUB_NOISE = ("linktr", "reach", "iwtsp", "beacons", "bio.link", "cdn", "fonts", "w3.org", "schema.org", "cloudflare",
+             "sentry", "gstatic", "googleapis", "jsdelivr", "unpkg", "datagrail", "spotify", "linkedin", "clarity.ms",
+             "threads", "fontawesome", "doubleclick", "facebook.net", "vercel", "amazonaws", "imgix", "t.me",
+             "telegram", "mysyara", "hotjar", "segment", "intercom", "stripe", "paypal", "boutiqaat", "enabill")
+_HUB_CACHE = {}
+
+
+def hub_links(url):
+    """Outbound website domains listed on a link-hub page (Linktree, reach.link, ...). Network call, cached."""
+    if url in _HUB_CACHE:
+        return _HUB_CACHE[url]
+    out = []
+    try:
+        r = requests.get(url, impersonate="chrome", timeout=20, allow_redirects=True)
+        html = r.text or ""
+        for l in HREF_RE.findall(html) + re.findall(r'"url"\s*:\s*"(https?:[^"]+)"', html):
+            l = l.replace("\\/", "/")
+            host = urlparse(l).netloc.lower().removeprefix("www.")
+            if host and classify_link(l) == "site" and not any(n in host for n in HUB_NOISE + NOT_SITES):
+                out.append(host)
+    except Exception:
+        pass
+    _HUB_CACHE[url] = list(dict.fromkeys(out))
+    return _HUB_CACHE[url]
+
+
+def site_candidates(p, ig=None, follow_hubs=True):
+    """Every place a lead's own website can hide, best first: ad caption/links, Instagram bio links, sites listed
+    inside link-hub pages (Linktree...), domains written in the bio text, and the domain of a business email."""
+    cands, hubs = [], []
     for c in p.get("caption_domains") or []:
         cands.append(c)
-    for l in p.get("website_candidates") or []:
-        cands.append(urlparse(l).netloc)
+    links = list(p.get("website_candidates") or []) + list((ig or {}).get("links") or [])
+    for l in links:
+        k = classify_link(l)
+        if k == "site":
+            cands.append(urlparse(l).netloc)
+        elif k == "linkhub":
+            hubs.append(l)
     if ig:
-        for l in ig.get("links") or []:
-            k = classify_link(l)
-            if k == "site":
-                cands.append(urlparse(l).netloc)
-            elif k == "linkhub" and not cands:
-                return {"kind": "linkhub", "url": l}
+        cands += [m for m in DOMAIN_RE.findall(ig.get("bio") or "")]
+    if follow_hubs:
+        for h in dict.fromkeys(hubs):
+            cands += hub_links(h)
+    emails = list((ig or {}).get("emails") or []) + [((ig or {}).get("contact_button") or {}).get("email") or ""]
+    for e in emails:
+        if "@" in e:
+            d = e.split("@", 1)[1].lower()
+            if not any(f in d for f in FREE_MAIL):
+                cands.append(d)
+    seen, out = set(), []
     for c in cands:
-        c = c.lower().removeprefix("www.")
-        if c and not any(n in c for n in NOT_SITES) and classify_link("https://" + c) == "site":
-            return {"kind": "site", "url": home(c)}
+        c = (c or "").lower().strip().removeprefix("www.").rstrip("/.")
+        if c and c not in seen and not any(n in c for n in NOT_SITES + HUB_NOISE) \
+                and classify_link("https://" + c) == "site":
+            seen.add(c)
+            out.append(home(c))
+    return out, hubs
+
+
+def pick_site(p, ig=None, follow_hubs=True):
+    cands, hubs = site_candidates(p, ig, follow_hubs)
+    if cands:
+        return {"kind": "site", "url": cands[0], "candidates": cands}
+    if hubs:
+        return {"kind": "linkhub", "url": hubs[0]}
     if p.get("whatsapp_from_ads"):
         return {"kind": "whatsapp", "url": None}
     if "social" in (p.get("link_kinds") or []):
@@ -174,8 +231,20 @@ def main():
         out[p["page_id"]] = {"page_id": p["page_id"], "page_name": p["page_name"], **pick}
         if pick["kind"] == "site":
             jobs.append(p["page_id"])
+    def first_working(pid):
+        # try every candidate (bio link, link-hub sites, bio text, email domain) until one really loads
+        cands = out[pid].get("candidates") or [out[pid]["url"]]
+        first = None
+        for u in cands:
+            r = check(u, a.psi)
+            first = first or r
+            if r["kind"] == "site" and r["loads"] is not False:
+                out[pid]["url"] = u
+                return r
+        return first
+
     with ThreadPoolExecutor(a.workers) as ex:
-        for pid, r in zip(jobs, ex.map(lambda pid: check(out[pid]["url"], a.psi), jobs)):
+        for pid, r in zip(jobs, ex.map(first_working, jobs)):
             out[pid]["check"] = r
             out[pid]["kind"] = r["kind"]
     pathlib.Path(a.out).write_text(json.dumps(out, ensure_ascii=False, indent=1), encoding="utf-8")
